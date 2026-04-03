@@ -3,73 +3,60 @@ using System.Collections.Generic;
 using System.Net.Http;
 using System.Security.Cryptography;
 using System.Text;
-using System.Threading.Tasks;
 
 namespace PersonalPro
 {
     public static class DatabaseHelper
     {
-        // 사용자 전용 구글 웹 앱 URL (배포된 URL 유지)
-        private static readonly string scriptUrl = "https://script.google.com/macros/s/AKfycbzkqdl2JXOS2Z4o2vrPgwcEwTc4suEMz1xcNGs9x7NuGVGGVNp5kjJvZmveSg0UHAod2g/exec";
+        private static readonly string scriptUrl = "https://script.google.com/macros/s/AKfycby8RCvPsi8GMjqyTOReN4BH3u1Po9vdEuI2M9MqzwppQ-LkYkKUD3vK6VYrlRiRRNAUxg/exec";
+        public static string CurrentNickname = ""; // 닉네임 저장용
 
         public static void InitializeDatabase() { }
 
-        #region 보안 관련 (비밀번호 해싱)
-        /// <summary>
-        /// 비밀번호를 SHA-256 방식으로 암호화(해싱)합니다.
-        /// </summary>
+        // SHA-256 해싱 (최신 방식 적용)
         private static string HashPassword(string password)
         {
             if (string.IsNullOrEmpty(password)) return "";
-
-            using (SHA256 sha256Hash = SHA256.Create())
-            {
-                // 비밀번호를 바이트 배열로 변환 후 해시 계산
-                byte[] bytes = sha256Hash.ComputeHash(Encoding.UTF8.GetBytes(password));
-
-                // 바이트 배열을 16진수 문자열로 변환
-                StringBuilder builder = new StringBuilder();
-                for (int i = 0; i < bytes.Length; i++)
-                {
-                    builder.Append(bytes[i].ToString("x2"));
-                }
-                return builder.ToString();
-            }
+            // SHA256.HashData는 .NET 최신 버전에서 권장하는 정적 메서드입니다.
+            byte[] bytes = SHA256.HashData(Encoding.UTF8.GetBytes(password));
+            StringBuilder builder = new StringBuilder();
+            foreach (byte b in bytes) builder.Append(b.ToString("x2"));
+            return builder.ToString();
         }
-        #endregion
 
-        // 1. 로그인 (암호화된 비번 전송)
+        // 로그인
         public static int LoginCheckReturnIdx(string id, string pw)
         {
             try
             {
-                string hashedPw = HashPassword(pw); // 비번 암호화
-
+                string hashedPw = HashPassword(pw);
                 using var client = new HttpClient();
                 var pairs = new List<KeyValuePair<string, string>> {
-                    new("action", "login"),
-                    new("id", id),
-                    new("pw", hashedPw) // 암호화된 값 전달
+                    new("action", "login"), new("id", id), new("pw", hashedPw)
                 };
                 var response = client.PostAsync(scriptUrl, new FormUrlEncodedContent(pairs)).Result;
                 string res = response.Content.ReadAsStringAsync().Result.Trim();
-                return int.TryParse(res, out int idx) ? idx : -1;
+
+                if (res.Contains("|"))
+                {
+                    var parts = res.Split('|');
+                    CurrentNickname = parts[1]; // 닉네임 추출
+                    return int.Parse(parts[0]); // idx 추출
+                }
+                return -1;
             }
             catch { return -1; }
         }
 
-        // 2. 회원가입 (암호화된 비번 저장)
-        public static bool RegisterUser(string id, string pw)
+        // 회원가입
+        public static bool RegisterUser(string id, string pw, string nick)
         {
             try
             {
-                string hashedPw = HashPassword(pw); // 비번 암호화
-
+                string hashedPw = HashPassword(pw);
                 using var client = new HttpClient();
                 var pairs = new List<KeyValuePair<string, string>> {
-                    new("action", "register"),
-                    new("id", id),
-                    new("pw", hashedPw) // 암호화된 값 저장 요청
+                    new("action", "register"), new("id", id), new("pw", hashedPw), new("nickname", nick)
                 };
                 var response = client.PostAsync(scriptUrl, new FormUrlEncodedContent(pairs)).Result;
                 return response.Content.ReadAsStringAsync().Result.Trim() == "success";
@@ -77,7 +64,7 @@ namespace PersonalPro
             catch { return false; }
         }
 
-        // 3. OTT 리스트 가져오기
+        // OTT 목록 가져오기
         public static List<string[]> GetUserOtts(int userIdx)
         {
             var list = new List<string[]>();
@@ -85,12 +72,10 @@ namespace PersonalPro
             {
                 using var client = new HttpClient();
                 var pairs = new List<KeyValuePair<string, string>> {
-                    new("action", "getList"),
-                    new("userIdx", userIdx.ToString())
+                    new("action", "getList"), new("userIdx", userIdx.ToString())
                 };
                 var response = client.PostAsync(scriptUrl, new FormUrlEncodedContent(pairs)).Result;
                 string res = response.Content.ReadAsStringAsync().Result.Trim();
-
                 if (!string.IsNullOrEmpty(res) && res != "-1")
                 {
                     foreach (var item in res.Split(','))
@@ -104,9 +89,13 @@ namespace PersonalPro
             return list;
         }
 
-        // 4. OTT 추가/수정/삭제
+        // OTT 추가
         public static void AddUserOtt(int userIdx, string name, string url) => SendRequest("add", userIdx.ToString(), name, url);
+
+        // OTT 수정 (에러 해결용 추가)
         public static void UpdateUserOtt(string dbIdx, string name, string url) => SendRequest("update", dbIdx, name, url);
+
+        // OTT 삭제
         public static void DeleteUserOtt(string dbIdx) => SendRequest("delete", dbIdx);
 
         private static void SendRequest(string action, string p1, string p2 = "", string p3 = "")
@@ -121,6 +110,26 @@ namespace PersonalPro
                 _ = client.PostAsync(scriptUrl, new FormUrlEncodedContent(pairs)).Result;
             }
             catch { }
+        }
+        // DatabaseHelper 클래스 안에 추가
+        public static bool UpdateUserInfo(int userIdx, string pw, string nick)
+        {
+            try
+            {
+                string hashedPw = HashPassword(pw); // 새 비밀번호 암호화
+                using var client = new HttpClient();
+                var pairs = new List<KeyValuePair<string, string>> {
+            new("action", "updateUserInfo"),
+            new("userIdx", userIdx.ToString()),
+            new("pw", hashedPw),
+            new("nickname", nick)
+        };
+                var response = client.PostAsync(scriptUrl, new FormUrlEncodedContent(pairs)).Result;
+                bool success = response.Content.ReadAsStringAsync().Result.Trim() == "success";
+                if (success) CurrentNickname = nick; // 로컬 닉네임 정보도 갱신
+                return success;
+            }
+            catch { return false; }
         }
     }
 }

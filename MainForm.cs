@@ -37,6 +37,7 @@ namespace PersonalPro
             InitializeComponent();
             InitContextMenu();
             InitCustomUi();
+            this.Text = "OTT";
 
             this.KeyPreview = true;
             this.KeyDown += (s, e) => {

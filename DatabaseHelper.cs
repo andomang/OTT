@@ -43,6 +43,11 @@ namespace PersonalPro
         // { get; private set; } = 읽기는 어디서나 가능, 쓰기는 이 클래스 안에서만 가능
         public static string CurrentNickname { get; private set; } = "";
 
+        // ── 로그인 토큰 ───────────────────────────────────────────────
+        // 로그인하면 서버가 주는 임의의 문자열. 이후 모든 요청에 붙여서 "내가 누구인지" 증명함
+        // (예전엔 사용자 번호만 보내서, 번호만 알면 남의 계정을 바꿀 수 있었음)
+        private static string _token = "";
+
         // ── 초기화 메서드 (현재 비어있음) ────────────────────────────
         // 앱 시작 시 호출하는 초기화 메서드 — 나중에 쓸 수도 있어서 남겨둠
         public static void InitializeDatabase() { }
@@ -124,6 +129,8 @@ namespace PersonalPro
             {
                 // FormUrlEncodedContent = "action=login&id=홍길동" 형태로 데이터를 묶어주는 도구
                 // .Result = 비동기 작업이 끝날 때까지 기다리기
+                // 로그인했으면 토큰을 함께 보냄 (서버가 이 토큰으로 본인 확인)
+                if (_token.Length > 0) pairs.Add(new("token", _token));
                 var response = Http.PostAsync(ScriptUrl, new FormUrlEncodedContent(pairs)).Result;
 
                 // 응답 본문을 문자열로 읽고 앞뒤 공백 제거
@@ -164,21 +171,21 @@ namespace PersonalPro
 
             if (res == null) return -2;
 
-            // 서버 응답 형식: "사용자번호|닉네임" (예: "3|홍길동")
-            // | 기호가 포함되어 있으면 정상 응답
-            if (res.Contains('|'))
+            // 서버 응답 형식: "사용자번호|토큰|닉네임" (예: "3|a1b2...|홍길동")
+            // 닉네임에 | 가 있어도 되도록 앞의 두 칸만 자름
+            var parts = res.Split('|', 3);
+            if (parts.Length == 3 && int.TryParse(parts[0], out int idx))
             {
-                // | 기호를 기준으로 문자열 나누기 → parts[0]=번호, parts[1]=닉네임
-                // string[] = 문자열 배열
-                var parts = res.Split('|');
-
-                // int.TryParse = 문자열을 정수로 변환 시도 (실패해도 예외 안 남)
-                if (int.TryParse(parts[0], out int idx))
-                {
-                    // 닉네임 저장 (parts가 2칸 이상일 때만)
-                    CurrentNickname = parts.Length > 1 ? parts[1] : "";
-                    return idx;   // 사용자 번호 반환
-                }
+                _token = parts[1];             // 이후 요청에 쓸 토큰
+                CurrentNickname = parts[2];
+                return idx;   // 사용자 번호 반환
+            }
+            // 예전 서버("번호|닉네임", 토큰 없음): 로그인은 성공으로 처리 (서버를 새 버전으로 배포하기 전에도 "비밀번호 틀림"이 뜨지 않게)
+            if (parts.Length == 2 && int.TryParse(parts[0], out idx))
+            {
+                _token = "";
+                CurrentNickname = parts[1];
+                return idx;
             }
             return -1;   // 로그인 실패 → -1 반환
         }

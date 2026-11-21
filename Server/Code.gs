@@ -1,12 +1,15 @@
 // OTT Multi-View 서버 (Google Apps Script)
 //
 // 시트 구성
-//   Users   : idx | id | pw | nickname | salt | email
+//   Users   : idx | id | pw | nickname | salt | email | token
 //   OttList : userIdx | name | url | dbIdx
 //   Layouts : userIdx | name | slots   (없으면 자동 생성)
 //
 // 비밀번호: 앱은 SHA-256 해시를 보내고, 서버는 사용자별 salt를 붙여 다시 해시해 저장합니다.
 // salt가 없는 기존 계정은 다음 로그인 때 자동으로 바뀝니다.
+//
+// 보안: 로그인하면 임의의 토큰을 발급하고, 그 뒤의 모든 요청은 토큰으로 본인을 확인합니다.
+//   (예전엔 userIdx만 보내면 남의 비밀번호 변경·목록 조회/수정이 가능했음 → 앱이 보내는 userIdx는 더 이상 믿지 않음)
 
 var ss = SpreadsheetApp.getActiveSpreadsheet();
 var userSheet = ss.getSheetByName("Users");
@@ -59,14 +62,51 @@ function tempPassword() {
   return "Ott!" + Utilities.getUuid().replace(/-/g, "").slice(0, 8) + "7a";
 }
 
+// 토큰(Users 7번째 칸)으로 로그인한 사용자 찾기. 없으면 null
+function authUser(e) {
+  var t = e.parameter.token;
+  if (!t || String(t).length < 20) return null;
+  var data = userSheet.getDataRange().getValues();
+  for (var i = 1; i < data.length; i++) {
+    if (data[i][6] && data[i][6] == t) return { idx: data[i][0], rowNum: i + 1 };
+  }
+  return null;
+}
+
+// 로그인할 때 토큰 발급 (이미 있으면 그대로 써서 여러 PC에서 동시에 로그인 가능)
+function tokenFor(rowNum) {
+  var cell = userSheet.getRange(rowNum, 7);
+  var t = cell.getValue();
+  if (!t) { t = Utilities.getUuid() + Utilities.getUuid(); cell.setValue(t); }
+  return t;
+}
+
+// 이 OTT 행(dbIdx)이 로그인한 사용자 것이면 시트 행 번호, 아니면 -1
+function findOttRow(dbIdx, userIdx) {
+  var data = ottSheet.getDataRange().getValues();
+  for (var i = 1; i < data.length; i++) {
+    if (data[i][3] == dbIdx) return data[i][0] == userIdx ? i + 1 : -1;
+  }
+  return -1;
+}
+
 function doPost(e) {
   var action = e.parameter.action;
+
+  // 로그인 없이 쓰는 기능: login / register / resetPassword 만
+  //   나머지는 토큰이 맞아야 함. 앱이 보낸 userIdx는 무시하고 토큰의 주인으로 처리
+  var me = null;
+  if (action != "login" && action != "register" && action != "resetPassword") {
+    me = authUser(e);
+    if (!me) return text("unauthorized");
+  }
 
   if (action == "login") {
     var data = userSheet.getDataRange().getValues();
     var row = findLoginRow(data, e.parameter.id, e.parameter.pw);
     if (row < 0) return text("-1");
-    return text(data[row - 1][0] + "|" + data[row - 1][3]);
+    // 응답: 번호|토큰|닉네임 (닉네임에 | 가 있어도 되도록 맨 뒤)
+    return text(data[row - 1][0] + "|" + tokenFor(row) + "|" + data[row - 1][3]);
   }
 
   if (action == "register") {
@@ -86,43 +126,35 @@ function doPost(e) {
     var data = ottSheet.getDataRange().getValues();
     var list = [];
     for (var i = 1; i < data.length; i++) {
-      if (data[i][0] == e.parameter.userIdx) list.push(data[i][3] + "|" + data[i][1] + "|" + data[i][2]);
+      if (data[i][0] == me.idx) list.push(data[i][3] + "|" + data[i][1] + "|" + data[i][2]);
     }
     return text(list.join(","));
   }
 
   if (action == "add") {
-    ottSheet.appendRow([e.parameter.userIdx, e.parameter.name, e.parameter.url, new Date().getTime().toString()]);
+    ottSheet.appendRow([me.idx, e.parameter.name, e.parameter.url, new Date().getTime().toString()]);
     return text("success");
   }
 
   if (action == "delete") {
-    deleteRowsWhere(ottSheet, 3, e.parameter.dbIdx);
+    var r = findOttRow(e.parameter.dbIdx, me.idx);   // 내 OTT만 삭제
+    if (r > 0) ottSheet.deleteRow(r);
     return text("success");
   }
 
   if (action == "update") {
-    var data = ottSheet.getDataRange().getValues();
-    for (var i = 1; i < data.length; i++) {
-      if (data[i][3] == e.parameter.dbIdx) {
-        ottSheet.getRange(i + 1, 2).setValue(e.parameter.name);
-        ottSheet.getRange(i + 1, 3).setValue(e.parameter.url);
-        return text("success");
-      }
-    }
-    return text("notFound");
+    var r = findOttRow(e.parameter.dbIdx, me.idx);   // 내 OTT만 수정
+    if (r < 0) return text("notFound");
+    ottSheet.getRange(r, 2).setValue(e.parameter.name);
+    ottSheet.getRange(r, 3).setValue(e.parameter.url);
+    return text("success");
   }
 
   if (action == "updateUserInfo" || action == "updateNickname" || action == "updatePassword") {
-    var rows = userSheet.getDataRange().getValues();
-    for (var i = 1; i < rows.length; i++) {
-      if (rows[i][0] == e.parameter.userIdx) {
-        if (action != "updateNickname") setPassword(i + 1, e.parameter.pw);
-        if (action != "updatePassword") userSheet.getRange(i + 1, 4).setValue(e.parameter.nickname);
-        return text("success");
-      }
-    }
-    return text("fail");
+    // 토큰의 주인 계정만 변경
+    if (action != "updateNickname") setPassword(me.rowNum, e.parameter.pw);
+    if (action != "updatePassword") userSheet.getRange(me.rowNum, 4).setValue(e.parameter.nickname);
+    return text("success");
   }
 
   if (action == "setEmail") {
@@ -139,6 +171,7 @@ function doPost(e) {
       if (data[i][1] == e.parameter.id && data[i][5] && data[i][5] == e.parameter.email) {
         var temp = tempPassword();
         setPassword(i + 1, sha256(temp));
+        userSheet.getRange(i + 1, 7).setValue("");   // 비밀번호 재설정 → 기존 로그인(토큰) 모두 끊기
         MailApp.sendEmail(e.parameter.email, "OTT Multi-View 임시 비밀번호",
           "임시 비밀번호: " + temp + "\n로그인 후 비밀번호를 변경해주세요.");
         return text("success");
@@ -161,12 +194,12 @@ function doPost(e) {
   if (action == "saveLayout") {
     var data = layoutSheet.getDataRange().getValues();
     for (var i = 0; i < data.length; i++) {
-      if (data[i][0] == e.parameter.userIdx && data[i][1] == e.parameter.name) {
+      if (data[i][0] == me.idx && data[i][1] == e.parameter.name) {
         layoutSheet.getRange(i + 1, 3).setValue(e.parameter.slots);
         return text("success");
       }
     }
-    layoutSheet.appendRow([e.parameter.userIdx, e.parameter.name, e.parameter.slots]);
+    layoutSheet.appendRow([me.idx, e.parameter.name, e.parameter.slots]);
     return text("success");
   }
 
@@ -175,7 +208,7 @@ function doPost(e) {
     var data = layoutSheet.getDataRange().getValues();
     var list = [];
     for (var i = 0; i < data.length; i++) {
-      if (data[i][0] == e.parameter.userIdx) list.push(data[i][1] + "\t" + data[i][2]);
+      if (data[i][0] == me.idx) list.push(data[i][1] + "\t" + data[i][2]);
     }
     return text(list.join("\n"));
   }

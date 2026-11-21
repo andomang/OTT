@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>com.apple.security.app-sandbox</key>
+	<true/>
+	<!-- 서버 통신과 OTT 사이트 접속 -->
+	<key>com.apple.security.network.client</key>
+	<true/>
+	<!-- 자동 로그인 정보를 키체인에 저장 -->
+	<key>keychain-access-groups</key>
+	<array>
+		<string>$(AppIdentifierPrefix)com.personalpro.ottmultiview</string>
+	</array>
+</dict>
+</plist>

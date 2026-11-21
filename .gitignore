@@ -1,5 +1,27 @@
-# 빌드 산출물
+# ── 빌드 산출물 ──
 bin/
 obj/
 .vs/
+.idea/
 *.user
+TestResults/
+
+# ── 배포 설정 (PC 안의 폴더 경로가 들어 있음) ──
+Properties/PublishProfiles/
+
+# ── AI 작업용 지침·도구 파일 (코드와 무관) ──
+CLAUDE.md
+AGENTS.md
+.claude/
+graphify-out/
+
+# ── 개인 스크립트·로그·임시 파일 ──
+*.bat
+*.cmd
+*.ps1
+*.log
+*.tmp
+
+# ── OS 파일 ──
+Thumbs.db
+.DS_Store

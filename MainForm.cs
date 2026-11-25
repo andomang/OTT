@@ -179,7 +179,12 @@ namespace PersonalPro
                 _ = fullScreenView.ExecuteScriptAsync("document.exitFullscreen()");
                 ExitFullScreen();
             };
-            this.Shown     += (s, e) => { if (CheckWebView2Runtime()) TryAutoLogin(); };
+            this.Shown     += async (s, e) =>
+            {
+                if (!CheckWebView2Runtime()) return;
+                if (await Updater.CheckAndInstallAsync(this)) return;  // 업데이트 설치로 앱 종료
+                TryAutoLogin();
+            };
             this.FormClosing += (s, e) => SaveWindowState();
         }
 
@@ -1271,9 +1276,10 @@ namespace PersonalPro
             try
             {
                 uri = new Uri(url);  // 예전에 저장된 잘못된 URL이면 여기서 걸러짐
-                var env = await CoreWebView2Environment.CreateAsync(null, dir);
+                var env = await CoreWebView2Environment.CreateAsync(null, dir, BrowserExtensions.Options());
                 await wv.EnsureCoreWebView2Async(env);
                 await wv.CoreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(VolumeScript);
+                await BrowserExtensions.LoadAsync(wv.CoreWebView2);
             }
             catch (Exception ex)
             {

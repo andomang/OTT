@@ -324,8 +324,9 @@ namespace PersonalPro
             try
             {
                 // await = 이 작업이 끝날 때까지 기다리기 (화면은 계속 반응)
-                var env = await CoreWebView2Environment.CreateAsync(null, dir);
+                var env = await CoreWebView2Environment.CreateAsync(null, dir, BrowserExtensions.Options());
                 await _wv.EnsureCoreWebView2Async(env);
+                await BrowserExtensions.LoadAsync(_wv.CoreWebView2);
 
                 // OTT 사이트 열기
                 _wv.Source = new Uri(_url);   // Uri = 웹 주소(URL)를 나타내는 타입

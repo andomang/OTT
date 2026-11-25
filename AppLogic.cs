@@ -157,4 +157,19 @@ namespace PersonalPro
             return minutes < 60 ? $"{minutes}분" : $"{minutes / 60}시간 {minutes % 60}분";
         }
     }
+
+    /// <summary>GitHub 릴리스 버전 비교</summary>
+    public static class UpdateCheck
+    {
+        /// <summary>
+        /// 릴리스 태그(예: "1.2.0", "v1.2")가 현재 버전보다 새로우면 true.
+        /// 1.2와 1.2.0.0처럼 자릿수가 달라도 같은 버전으로 봅니다.
+        /// </summary>
+        public static bool IsNewer(string tag, Version current)
+        {
+            if (!Version.TryParse(tag.Trim().TrimStart('v', 'V'), out var latest)) return false;
+            static Version N(Version v) => new(v.Major, v.Minor, Math.Max(v.Build, 0), Math.Max(v.Revision, 0));
+            return N(latest) > N(current);
+        }
+    }
 }

@@ -163,3 +163,16 @@ public class StatsAggregatorTests
     public void 시간을_읽기_좋게_표시한다(int seconds, string expected) =>
         Assert.Equal(expected, StatsAggregator.FormatDuration(seconds));
 }
+
+public class UpdateCheckTests
+{
+    [Theory]
+    [InlineData("1.2.1", "1.2.0.0", true)]
+    [InlineData("v1.3", "1.2.0.0", true)]
+    [InlineData("1.2.0", "1.2.0.0", false)]   // 자릿수만 다른 같은 버전
+    [InlineData("1.2", "1.2.0.0", false)]
+    [InlineData("1.1.1", "1.2.0.0", false)]
+    [InlineData("최신", "1.2.0.0", false)]      // 버전이 아닌 태그
+    public void 새_버전만_업데이트한다(string tag, string current, bool expected) =>
+        Assert.Equal(expected, UpdateCheck.IsNewer(tag, Version.Parse(current)));
+}

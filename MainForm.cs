@@ -236,6 +236,12 @@ namespace PersonalPro
             this.BackColor       = C_BG;
             this.StartPosition   = FormStartPosition.CenterScreen;
             this.DoubleBuffered  = true;
+            this.MinimumSize     = new Size(820, 520);
+
+            // 일반 창일 때만 가장자리 여백 (이 여백을 잡아 크기 조절)
+            this.Padding = new Padding(RESIZE_EDGE);
+            this.Resize += (s, e) =>
+                this.Padding = new Padding(this.WindowState == FormWindowState.Normal ? RESIZE_EDGE : 0);
 
             BuildTitleBar();
             BuildSidebar();
@@ -520,22 +526,7 @@ namespace PersonalPro
                 Theme.Apply(this);
                 UpdateNavState();
             };
-            btnPip.Click += (s, e) =>
-            {
-                this.Hide();
-                isPipMode = true;
-                ApplyMute();  // 숨겨진 메인 창 소리 끄기
-                var launcher = new PipLauncherForm(currentUserIdx, currentUserId, DatabaseHelper.CurrentNickname);
-                launcher.FormClosed += async (s2, e2) =>
-                {
-                    if (this.IsDisposed) return;
-                    this.Show();
-                    isPipMode = false;
-                    ApplyMute();
-                    await RefreshOttList();  // 런처에서 바뀐 OTT 반영
-                };
-                launcher.Show();
-            };
+            btnPip.Click += (s, e) => EnterPipMode();
             btnLogout.Click   += (s, e) =>
             {
                 DatabaseHelper.ClearAutoLogin();  // 재시작 후 다시 로그인되지 않도록
@@ -1375,10 +1366,46 @@ namespace PersonalPro
         /// </summary>
         private void SendToPip(string name)
         {
-            if (!dicWebViews.TryGetValue(name, out var wv)) return;
-            string url = wv.CoreWebView2?.Source ?? loadedUrls[name];
-            new PipForm(name, url, currentUserId).Show();
-            CloseCell(name);
+            OpenPip(name, "");
+            EnterPipMode();  // 메인 창은 숨기고 PiP 런처로 전환
+        }
+
+        /// <summary>
+        /// PiP 창을 엽니다. 메인 화면에 같은 OTT가 열려 있으면 보던 페이지를 넘기고 그 칸은 닫습니다.
+        /// (같은 OTT 화면 두 개가 같은 브라우저 저장소를 동시에 쓰면 PiP 창이 열리지 않음)
+        /// </summary>
+        /// <param name="name">OTT 이름 (string)</param>
+        /// <param name="url">메인 화면에 열려 있지 않을 때 열 주소 (string)</param>
+        private void OpenPip(string name, string url)
+        {
+            if (dicWebViews.TryGetValue(name, out var wv))
+            {
+                url = wv.CoreWebView2?.Source ?? loadedUrls[name];
+                new PipForm(name, url, currentUserId).Show();
+                CloseCell(name);
+            }
+            else new PipForm(name, url, currentUserId).Show();
+        }
+
+        /// <summary>
+        /// PiP 모드: 메인 창을 숨기고 PiP 런처를 띄웁니다. 런처를 닫으면 메인 창으로 돌아옵니다.
+        /// </summary>
+        private void EnterPipMode()
+        {
+            if (isPipMode) return;
+            this.Hide();
+            isPipMode = true;
+            ApplyMute();  // 숨겨진 메인 창 소리 끄기
+            var launcher = new PipLauncherForm(currentUserIdx, currentUserId, DatabaseHelper.CurrentNickname, OpenPip);
+            launcher.FormClosed += async (s2, e2) =>
+            {
+                if (this.IsDisposed) return;
+                this.Show();
+                isPipMode = false;
+                ApplyMute();
+                await RefreshOttList();  // 런처에서 바뀐 OTT 반영
+            };
+            launcher.Show();
         }
 
         /// <summary>
@@ -1932,17 +1959,35 @@ namespace PersonalPro
                 ? FormWindowState.Normal : FormWindowState.Maximized;
         }
 
+        // 창 가장자리 크기 조절 영역 두께 — 웹 화면이 가장자리를 덮지 않도록 같은 두께의 여백을 둠
+        private const int RESIZE_EDGE = 5;
+
         /// <summary>
-        /// Windows 메시지를 가로채서 창 오른쪽 아래 모서리 드래그 리사이즈를 구현합니다.
+        /// Windows 메시지를 가로채서 창 가장자리·모서리 드래그 리사이즈를 구현합니다.
         /// FormBorderStyle.None 이므로 운영체제 기본 리사이즈가 없어서 직접 처리해야 합니다.
         /// </summary>
         protected override void WndProc(ref Message m)
         {
-            if (m.Msg == 0x84)
+            // 최대화·전체화면 중에는 크기 조절 없음
+            if (m.Msg == 0x84 && this.WindowState == FormWindowState.Normal)
             {
                 var p = this.PointToClient(new Point(unchecked((int)m.LParam.ToInt64())));
-                if (p.X >= this.ClientSize.Width - 15 && p.Y >= this.ClientSize.Height - 15)
-                { m.Result = (IntPtr)17; return; }
+                int w = this.ClientSize.Width, h = this.ClientSize.Height;
+                bool l = p.X < RESIZE_EDGE, r = p.X >= w - RESIZE_EDGE;
+                bool t = p.Y < RESIZE_EDGE, b = p.Y >= h - RESIZE_EDGE;
+                int hit = (l, r, t, b) switch
+                {
+                    (true, _, true, _) => 13,  // 왼쪽 위
+                    (_, true, true, _) => 14,  // 오른쪽 위
+                    (true, _, _, true) => 16,  // 왼쪽 아래
+                    (_, true, _, true) => 17,  // 오른쪽 아래
+                    (true, _, _, _)    => 10,  // 왼쪽
+                    (_, true, _, _)    => 11,  // 오른쪽
+                    (_, _, true, _)    => 12,  // 위
+                    (_, _, _, true)    => 15,  // 아래
+                    _                  => 0
+                };
+                if (hit != 0) { m.Result = (IntPtr)hit; return; }
             }
             base.WndProc(ref m);
         }

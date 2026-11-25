@@ -15,7 +15,7 @@
 		<PublishReadyToRun>true</PublishReadyToRun>
 		<AssemblyName>OTT</AssemblyName>
 		<!-- 릴리스 태그와 같게 올릴 것 (자동 업데이트가 이 값과 GitHub 최신 릴리스를 비교) -->
-		<Version>1.3.0</Version>
+		<Version>1.3.1</Version>
 		<RootNamespace>OTT</RootNamespace>
 		<DefaultItemExcludes>$(DefaultItemExcludes);Tests\**;Maui\**</DefaultItemExcludes>
 	</PropertyGroup>

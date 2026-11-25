@@ -46,6 +46,8 @@ namespace PersonalPro
         private readonly string _userId;
         // 사용자 닉네임 (헤더에 표시)
         private readonly string _nickname;
+        // PiP 창 열기 (메인 화면에 같은 OTT가 열려 있으면 메인 창이 넘겨줌)
+        private readonly Action<string, string> _openPip;
         // OTT 버튼들이 들어가는 스크롤 패널
         // Panel? = Panel 타입인데 null(아직 없음)일 수 있음
         private Panel?   _pnlOttButtons;
@@ -65,11 +67,13 @@ namespace PersonalPro
         /// <param name="userIdx">사용자 번호 (int)</param>
         /// <param name="userId">사용자 아이디 (string)</param>
         /// <param name="nickname">사용자 닉네임 (string)</param>
-        public PipLauncherForm(int userIdx, string userId, string nickname)
+        /// <param name="openPip">PiP 창 열기 (OTT 이름, 주소)</param>
+        public PipLauncherForm(int userIdx, string userId, string nickname, Action<string, string> openPip)
         {
             _userIdx  = userIdx;
             _userId   = userId;
             _nickname = nickname;
+            _openPip  = openPip;
 
             BuildUI();  // 화면 요소 만들기
             Theme.Apply(this);
@@ -289,7 +293,7 @@ namespace PersonalPro
             if (isCustom) btn.ContextMenuStrip = _cmsMenu;
 
             // 클릭 시 해당 OTT의 PiP 창 열기 (여러 개 동시 오픈 가능)
-            btn.Click += (s, e) => new PipForm(name, url, _userId).Show();
+            btn.Click += (s, e) => _openPip(name, url);
 
             // 구글 파비콘 서비스로 아이콘 비동기 로드 (결과 무시 = _ =)
             _ = LoadFaviconAsync(btn, url);

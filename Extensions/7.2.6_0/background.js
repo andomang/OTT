@@ -845,6 +845,8 @@ var getAllTabs = function () {
     });
 };
 var createTab = function (url) {
+    // OTT Multi-View 수정: 설치/업데이트 홍보 페이지는 열지 않음
+    if (/adblock-for-y(outube)?\.com/.test(url)) return Promise.resolve(undefined);
     return new Promise(function (resolve, reject) {
         chrome.tabs.create({ url: url }, function (tab) {
             var error = chrome.runtime.lastError;

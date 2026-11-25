@@ -14,6 +14,12 @@ CLAUDE.md
 AGENTS.md
 .claude/
 graphify-out/
+.impeccable/
+GEMINI.md
+AI_HANDOFF_PROMPT.md
+PRODUCT.md
+DESIGN.md
+.cursor/
 
 # ── 개인 스크립트·로그·임시 파일 ──
 *.bat
@@ -28,3 +34,15 @@ Thumbs.db
 
 # ── 서버 코드 (Apps Script에만 두고 공개 저장소에는 올리지 않음) ──
 Server/
+
+# ── 비밀 정보 (API 키·토큰·인증서) ──
+.env
+appsettings*.json
+*.pfx
+*.pem
+*.key
+
+# ── 설치 파일·압축 파일 (GitHub Releases로만 배포) ──
+*.exe
+*.msi
+*.zip
